@@ -47,7 +47,7 @@ expression */5 * * * *, triggers when failed login count exceeds 5.
 Failed login attempts detected across 5 accounts:
 
 - Target accounts (Administrator, admin, root, service, testuser)
-  each received 6 failed attempts
+  each received 7 failed attempts
 - Account winvm-1 accumulated 30 failed attempts from
   earlier testing sessions
 - All accounts exceeded the detection threshold of 5
