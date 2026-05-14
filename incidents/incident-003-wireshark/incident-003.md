@@ -3,7 +3,7 @@
 **Detection method:** Packet capture (tcpdump on attacker NIC, analyzed in Wireshark)
 **Date:** 2026-05-14
 **Lab environment:** VMware Fusion on Apple Silicon (M2 MacBook), bridged Wi-Fi networking
-**Analyst:** Artur Barabanov
+**Analyst:** Artur B.
 
 ---
 
