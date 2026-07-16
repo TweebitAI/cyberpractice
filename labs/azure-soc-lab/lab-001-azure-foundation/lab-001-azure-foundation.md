@@ -14,7 +14,7 @@
 
 Built the initial Azure foundation for a SOC / Active Directory security lab.
 
-The foundation includes cost control, a dedicated resource group, a virtual network, and a subnet for future Windows Server, Active Directory, logging, and detection engineering exercises.
+The foundation includes cost monitoring, a dedicated resource group, a virtual network, and a subnet for future Windows Server, Active Directory, logging, and detection engineering exercises.
 
 This phase does not yet include Windows Server, Active Directory, log ingestion,
 Microsoft Sentinel, alerting, or incident investigation. It establishes the
@@ -52,13 +52,13 @@ Prepare a controlled Azure environment for future SOC lab phases:
 
 ## Implementation Steps
 
-### 1. Cost Control
+### 1. Cost Monitoring
 
-Created an Azure budget to control lab spending and avoid unexpected costs.
+Created a monthly Azure budget to monitor spending and send notifications when
+configured actual or forecasted cost thresholds are reached. Azure budgets do
+not cap consumption or automatically stop resources.
 
 Evidence:
-
-![Budget Created](screenshots/01-budget-created.png)
 
 ![Budget Alert Details](screenshots/09-budget-alert-details.png)
 
@@ -169,7 +169,6 @@ Planned configuration:
 
 ## Artifacts
 
-- `screenshots/01-budget-created.png`
 - `screenshots/02-resource-group-created.png`
 - `screenshots/03-vnet-visible-in-all-resources.png`
 - `screenshots/04-vnet-address-space.png`
