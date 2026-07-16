@@ -1,23 +1,29 @@
-# Incident 003 — Network Reconnaissance via TCP Connect Scan
+# Incident 003 — Network Service Discovery via TCP Connect Scan
 
-**Detection method:** Packet capture (tcpdump on attacker NIC, analyzed in Wireshark)
-**Date:** 2026-05-14
-**Lab environment:** VMware Fusion on Apple Silicon (M2 MacBook), bridged Wi-Fi networking
-**Analyst:** Artur B.
+- **Detection method:** Packet capture (tcpdump on attacker NIC, analyzed in Wireshark)
+- **Date:** 2026-05-14
+- **Lab environment:** VMware Fusion on Apple Silicon (M2 MacBook), bridged Wi-Fi networking
+- **Analyst:** Artur B.
 
 ---
 
 ## Triage
 
 ### Alert
-Network reconnaissance detected against host `192.168.178.27` (DESKTOP-H4578B8). Three TCP SYN probes from `192.168.178.29` targeting RPC/SMB-related ports (135, 139, 445) over a 30-second window. Source MAC `00:0c:29:b4:63:49` (VMware-assigned) confirms originating host as the lab Kali VM.
+Network service discovery activity was observed against host `192.168.178.27`
+(DESKTOP-H4578B8). Three TCP SYN probes from `192.168.178.29` targeted
+RPC/SMB-related ports (135, 139, 445) over a 30-second window. Lab inventory
+mapped the source IP and MAC `00:0c:29:b4:63:49` to the Kali VM. The VMware OUI
+is consistent with a VMware virtual NIC but does not independently identify the
+guest operating system or asset owner.
 
 ### Hypothesis
 Active service discovery against Windows file/RPC services. Inter-probe spacing of approximately 15 seconds is consistent with nmap's `-T1` ("sneaky") timing template and may evade short-window or volume-only detection rules.
 
 ### Evidence For
 - pcap shows three complete TCP three-way handshakes (SYN -> SYN-ACK -> ACK -> RST) initiated from `.29` to `.27` on ports 135, 139, 445
-- Connect-then-RST pattern is the signature of `nmap -sT` (TCP connect scan)
+- The connect-then-RST pattern is consistent with an `nmap -sT` TCP connect
+  scan, but it is not unique to Nmap
 - Wireshark reports `Conversation completeness: Complete, NO_DATA`: the handshake completed with no application payload. This supports a probe hypothesis when combined with the immediate reset and port sequence, but it is not conclusive by itself because legitimate health checks can also complete without payload.
 - Inter-probe spacing: packets 3 -> 9 -> 13 at 15.45s -> 30.45s -> 45.45s. The approximately 15-second interval supports automated timing; regularity alone does not establish malicious intent.
 - Target ports (135 msrpc, 139 netbios-ssn, 445 microsoft-ds) form a known Windows reconnaissance set, mapping to MITRE T1046 (Network Service Discovery)
@@ -88,7 +94,11 @@ Standard host-side packet capture from the analyst workstation (macOS host) targ
 | `bridge101` | vmnet8 / NAT (192.168.161.0/24) | 0 packets captured |
 | `bridge102` | vmnet2 / Bridged (mapped to en0) | 0 packets captured |
 
-In each test, ICMP connectivity between the VMs was confirmed working (sub-millisecond round-trip times), proving the failure was capture-side, not connectivity-side.
+In each test, ICMP connectivity between the VMs was confirmed working
+(sub-millisecond round-trip times). This established network reachability while
+the zero-packet results indicated a host-side capture visibility, forwarding
+path, interface-selection, or capture-configuration issue; ICMP success alone
+did not prove one specific root cause.
 
 ### Observed limitation and working hypothesis
 
@@ -96,7 +106,7 @@ On this host and network configuration, the tested macOS interfaces did not expo
 
 VMware Fusion provides bridged, NAT, and host-only networking modes, while Apple's `vmnet` framework provides packet I/O for virtual-machine interfaces. The exact forwarding and capture path can vary by configuration. For this exercise, the practical conclusion was limited to the tested setup: host-side capture did not produce the required evidence.
 
-### Confirmation via VMware's own tooling
+### VMware tooling result
 VMware ships a bundled utility, `vmnet-sniffer`, located at `/Applications/VMware Fusion.app/Contents/Library/vmnet-sniffer`.
 
 On Intel Macs this tool was the documented workaround for the BPF limitation, accessing VMware's vmnet driver directly. On Apple Silicon, invoking it returns the error: *"is not supported when using MacOS network virtualization API. Use tcpdump instead."*
@@ -115,7 +125,9 @@ Capture on the attacker's NIC inside the source VM (Kali `eth0`), which is a nor
 Capturing on the source NIC preserved the packet sequence, flags, ports, timing, and payload information required for this investigation. It should not be described as byte-identical to a capture taken at a different point, because link-layer details, timestamps, offload behavior, and visibility can vary by capture location.
 
 ### Lessons
-- BPF availability is a property of the network stack, not the operating system. The same Mac that fails to capture VM-to-VM traffic captures Wi-Fi traffic on en0 without issue.
+- Packet visibility depends on the capture interface and virtualization
+  forwarding path. The presence of BPF and `tcpdump` does not guarantee that a
+  particular VM-to-VM frame will be observable on every host interface.
 - Source-side capture was a practical fallback for this lab because it provided the evidence needed to analyze the simulated scan.
 - Tool guidance should be validated against the interfaces and network mode actually in use rather than assumed to apply to every virtualized topology.
 
@@ -150,7 +162,7 @@ Reproduction steps documented in *Capture Methodology* above.
 ---
 
 ## Related Incidents
-- Incident 001 — Brute force detection (Splunk + Windows Security log, EID 4625)
+- Incident 001 — Password spraying detection (Splunk + Windows Security log, EID 4625)
 - Incident 002 — Nmap port scan detection (Splunk + Sysmon EID 3)
 
 Incident 003 complements Incident 002 by adding packet-level evidence to the same ATT&CK technique. Incident 002 demonstrates investigation with Sysmon and Splunk; Incident 003 shows the packet sequence and explains why volume-only thresholds may miss a slow, low-count scan.
