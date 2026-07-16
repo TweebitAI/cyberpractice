@@ -1,80 +1,126 @@
-# Lab Exercise 001 — Brute Force Attack Detection
-### Format: Incident Report Style
-**Date:** 2026-04-15
+# Lab Exercise 001 - Password Spraying Simulation and Failed Logon Detection
+
+**Date:** 2026-04-16
+
 **Analyst:** Artur B.
-**Lab:** SOC Home Lab (VMware Fusion, Apple Silicon M2)
 
-## Summary
-Simulated credential stuffing attack against Windows 11 VM using
-PowerShell. Attack detected via Windows Security EventCode 4625
-(Failed Logon) forwarded to Splunk SIEM. Automated scheduled alert
-configured to fire when failed login count per account exceeds 5.
+**Environment:** SOC Home Lab (VMware Fusion, Apple Silicon M2)
 
-## Attack Details
-- **Tool:** PowerShell (Windows native)
-- **Method:** Repeated failed authentication attempts using
-  PSCredential with incorrect password across multiple accounts
-- **Target accounts:** Administrator, admin, root, testuser, service
-- **Target:** Windows 11 ARM VM (DESKTOP-H4578B8)
+## Executive Summary
 
-## Attack Simulation Command
+Simulated a password spraying pattern against a Windows 11 VM by using the
+same incorrect password across five accounts. Windows Security Event ID 4625
+events were forwarded to Splunk Enterprise. A scheduled per-account failed
+logon alert triggered after each target account exceeded five failures.
 
-    $users = @("Administrator","admin","root","testuser","service")
-    foreach ($user in $users) {
-        $secpasswd = ConvertTo-SecureString "WrongPass!" -AsPlainText -Force
-        $creds = New-Object System.Management.Automation.PSCredential ($user, $secpasswd)
-        Start-Job -ScriptBlock { whoami } -Credential $creds 2>$null
-    }
+The alert confirmed repeated authentication failures, while correlation across
+the five accounts and knowledge of the lab command established the password
+spraying scenario. The exercise also identified a detection gap: a per-account
+threshold alone can miss a low-and-slow spray that stays below the threshold for
+each user.
 
-## Detection Method
-**Log source:** Windows Security Log — EventCode 4625 (Failed Logon)
-**SIEM:** Splunk Enterprise (local Mac host)
-**Alert:** Scheduled search running every 5 minutes via cron
-expression */5 * * * *, triggers when failed login count exceeds 5.
+## Scenario
 
-**SPL Query:**
+- **Technique simulated:** One password attempted against multiple accounts
+- **Tool:** PowerShell using `PSCredential`
+- **Target accounts:** `Administrator`, `admin`, `root`, `testuser`, `service`
+- **Target:** Windows 11 ARM VM (`DESKTOP-H4578B8`)
+- **Log source:** Windows Security log, Event ID 4625 (failed logon)
+- **SIEM:** Splunk Enterprise
 
-    index=* source="WinEventLog:Security" EventCode=4625
-    | stats count by Account_Name
-    | where count > 5
-    | sort -count
+The loop was executed repeatedly during testing, producing seven failed logon
+events for each target account.
 
-## Evidence
-![Splunk showing failed logins by account](screenshots/01-splunk-4625-events.png)
-![Splunk triggered alert](screenshots/02-triggered-alert.png)
+## Attack Simulation
 
-## Findings
-Failed login attempts detected across 5 accounts:
+```powershell
+$users = @("Administrator", "admin", "root", "testuser", "service")
 
-- Target accounts (Administrator, admin, root, service, testuser)
-  each received 7 failed attempts
-- Account winvm-1 accumulated 30 failed attempts from
-  earlier testing sessions
-- All accounts exceeded the detection threshold of 5
+foreach ($user in $users) {
+    $secpasswd = ConvertTo-SecureString "WrongPass!" -AsPlainText -Force
+    $creds = New-Object System.Management.Automation.PSCredential ($user, $secpasswd)
+    Start-Job -ScriptBlock { whoami } -Credential $creds 2>$null
+}
+```
 
-Alert fired successfully and appeared in
-Activity → Triggered Alerts in Splunk.
+## Detection and Analysis
+
+The scheduled search ran every five minutes and returned accounts with more
+than five failed logons. The query below matches the published evidence:
+
+```spl
+index=* source="WinEventLog:Security" EventCode=4625
+| stats count min(_time) as first_seen max(_time) as last_seen by Account_Name
+| where count > 5
+| eval first_seen=strftime(first_seen, "%Y-%m-%d %H:%M:%S")
+| eval last_seen=strftime(last_seen, "%Y-%m-%d %H:%M:%S")
+| sort -count
+```
+
+### Evidence
+
+![Splunk showing failed logons by account](screenshots/01-splunk-4625-events.png)
+
+![Splunk scheduled alert triggered](screenshots/02-triggered-alert.png)
+
+### Findings
+
+- Each of the five target accounts recorded seven failed logons.
+- The search also returned 35 events associated with `winvm-1`; these were
+  treated as unrelated test/background activity rather than part of the five
+  targeted user accounts.
+- The scheduled alert fired at 17:10 CEST and appeared in Splunk's Triggered
+  Alerts view.
+- Event ID 4625 does not expose the attempted password. In production, the
+  password-spray classification must be supported by source, timing, account
+  distribution, and other authentication context.
+
+## Detection Limitation and Improvement
+
+The demonstrated alert groups failures by account. It detects repeated failures
+against individual accounts but does not reliably identify low-volume spraying
+across many accounts. A stronger analytic would correlate distinct target
+accounts by source and time window, for example:
+
+```spl
+index=* source="WinEventLog:Security" EventCode=4625
+| bin _time span=10m
+| stats count dc(Account_Name) as targeted_accounts
+        values(Account_Name) as accounts
+        by Source_Network_Address _time
+| where targeted_accounts >= 5
+```
+
+Field names depend on the Windows event parsing configuration and should be
+validated before production use.
 
 ## MITRE ATT&CK Mapping
+
 - **Tactic:** Credential Access
-- **Technique:** T1110 — Brute Force
-- **Sub-technique:** T1110.004 — Credential Stuffing
+- **Technique:** T1110 - Brute Force
+- **Sub-technique:** [T1110.003 - Password Spraying](https://attack.mitre.org/techniques/T1110/003/)
 
-## Key Observation
-Same password attempted against multiple accounts in rapid
-succession — this is credential stuffing, not single-account
-brute force. Real attackers use this technique to avoid account
-lockout policies that trigger on repeated failures for one account.
-Detecting it requires counting total failed logins across all
-accounts, not just per-account thresholds.
+The scenario is password spraying because one password was attempted across
+multiple accounts. Credential stuffing (`T1110.004`) instead uses previously
+compromised username/password pairs.
 
-## Response (Lab Context)
-Simulated environment — no containment required.
+## Triage and Response Considerations
 
-In production:
-- Lock affected accounts immediately
-- Block source IP at firewall
-- Reset passwords for all targeted accounts
-- Check for any successful logins from the same source IP
-  before and after the failed attempts
-- Escalate to Tier 2 if Administrator account was targeted
+In this controlled lab, no containment was required. In a production case:
+
+1. Validate the source system, authentication service, time window, and whether
+   the activity matches an approved scanner or test.
+2. Search for successful logons, especially Event ID 4624, from the same source
+   before and after the failures.
+3. Identify privileged, service, or high-impact accounts among the targets.
+4. Apply account lock, password reset, source blocking, or conditional-access
+   controls according to policy and verified scope.
+5. Escalate when privileged accounts, successful authentication, distributed
+   sources, or continuing attempts increase the potential impact.
+
+## Outcome
+
+The exercise validated Windows failed-logon ingestion, SPL aggregation, and
+scheduled alert execution. It also demonstrated why technique-specific analysis
+requires correlation across accounts rather than reliance on a single
+per-account threshold.
