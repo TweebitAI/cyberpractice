@@ -21,7 +21,9 @@ guest operating system or asset owner.
 Active service discovery against Windows file/RPC services. Inter-probe spacing of approximately 15 seconds is consistent with nmap's `-T1` ("sneaky") timing template and may evade short-window or volume-only detection rules.
 
 ### Evidence For
-- pcap shows three complete TCP three-way handshakes (SYN -> SYN-ACK -> ACK -> RST) initiated from `.29` to `.27` on ports 135, 139, 445
+- The pcap shows three successful TCP connection establishments from `.29` to
+  `.27` on ports 135, 139, and 445 (SYN -> SYN-ACK -> ACK), each immediately
+  followed by a client-initiated RST.
 - The connect-then-RST pattern is consistent with an `nmap -sT` TCP connect
   scan, but it is not unique to Nmap
 - Wireshark reports `Conversation completeness: Complete, NO_DATA`: the handshake completed with no application payload. This supports a probe hypothesis when combined with the immediate reset and port sequence, but it is not conclusive by itself because legitimate health checks can also complete without payload.
