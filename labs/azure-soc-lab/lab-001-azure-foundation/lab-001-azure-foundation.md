@@ -16,6 +16,10 @@ Built the initial Azure foundation for a SOC / Active Directory security lab.
 
 The foundation includes cost control, a dedicated resource group, a virtual network, and a subnet for future Windows Server, Active Directory, logging, and detection engineering exercises.
 
+This phase does not yet include Windows Server, Active Directory, log ingestion,
+Microsoft Sentinel, alerting, or incident investigation. It establishes the
+cloud resources required for those later phases.
+
 ---
 
 ## Objective
@@ -122,7 +126,9 @@ Evidence:
 - No credentials, keys, secrets, or connection strings are stored in this repository.
 - Subscription IDs, resource IDs, billing account IDs, and personal identifiers are redacted from screenshots where required.
 - Future RDP access should be restricted by source IP or handled through Azure Bastion.
-- The lab is isolated inside a dedicated resource group.
+- The dedicated resource group provides administrative and lifecycle grouping;
+  it is not a network-security boundary. Network isolation will depend on later
+  subnet, NSG, routing, access-control, and workload configuration.
 
 ---
 
