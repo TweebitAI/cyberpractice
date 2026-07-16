@@ -46,7 +46,8 @@ foreach ($user in $users) {
 ## Detection and Analysis
 
 The scheduled search ran every five minutes and returned accounts with more
-than five failed logons. The query below matches the published evidence:
+than five failed logons. The query below matches the published evidence, but
+its generic `Account_Name` field is multivalued for these Event ID 4625 records:
 
 ```spl
 index=* source="WinEventLog:Security" EventCode=4625
@@ -63,36 +64,54 @@ index=* source="WinEventLog:Security" EventCode=4625
 
 ![Splunk scheduled alert triggered](screenshots/02-triggered-alert.png)
 
+The saved alert name visible in the screenshot (`Brute Force - Failed Logins`)
+predates the technique reclassification. The rule is a generic per-account
+failed-logon threshold; it is not a password-spray-specific analytic.
+
 ### Findings
 
-- Each of the five target accounts recorded seven failed logons.
-- The search also returned 35 events associated with `winvm-1`; these were
-  treated as unrelated test/background activity rather than part of the five
-  targeted user accounts.
+- The Splunk job processed 35 underlying Event ID 4625 records.
+- Each of the five target accounts appeared in seven records, accounting for
+  the 35 simulated failed logons.
+- The generic `Account_Name` extraction also grouped all 35 records under
+  `winvm-1`. Event ID 4625 contains both a subject account name and the account
+  for which logon failed, so the six statistics rows are not six disjoint event
+  sets. `winvm-1` is context from the same records, not an additional 35
+  background events.
 - The scheduled alert fired at 17:10 CEST and appeared in Splunk's Triggered
   Alerts view.
 - Event ID 4625 does not expose the attempted password. In production, the
   password-spray classification must be supported by source, timing, account
   distribution, and other authentication context.
 
+[Microsoft's Event ID 4625 schema](https://learn.microsoft.com/en-us/previous-versions/windows/it-pro/windows-10/security/threat-protection/auditing/event-4625)
+exposes `SubjectUserName` and `TargetUserName` as separate XML fields. The
+generic field observed in the screenshot did not preserve that distinction.
+
 ## Detection Limitation and Improvement
 
-The demonstrated alert groups failures by account. It detects repeated failures
-against individual accounts but does not reliably identify low-volume spraying
-across many accounts. A stronger analytic would correlate distinct target
-accounts by source and time window, for example:
+The demonstrated alert groups failures by the generic `Account_Name` field. It
+detects repeated failures against individual values but mixes subject and target
+account context and does not reliably identify low-volume spraying across many
+accounts. A stronger analytic would first normalize the explicit failed-logon
+target field and then correlate distinct targets by source and time window. For
+a parser that exposes the Windows XML field as `TargetUserName`, for example:
 
 ```spl
 index=* source="WinEventLog:Security" EventCode=4625
+| eval target_account=TargetUserName
+| eval source_address=coalesce(IpAddress, Source_Network_Address)
+| where isnotnull(target_account) AND isnotnull(source_address)
 | bin _time span=10m
-| stats count dc(Account_Name) as targeted_accounts
-        values(Account_Name) as accounts
-        by Source_Network_Address _time
+| stats count dc(target_account) as targeted_accounts
+        values(target_account) as accounts
+        by source_address _time
 | where targeted_accounts >= 5
 ```
 
-Field names depend on the Windows event parsing configuration and should be
-validated before production use.
+Field names depend on the Windows event parsing configuration. The explicit
+target-account and source-address fields must be validated against raw events
+before production use.
 
 ## MITRE ATT&CK Mapping
 
